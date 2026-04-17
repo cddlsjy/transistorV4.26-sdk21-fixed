@@ -5,9 +5,6 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,17 +13,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        id: setup-java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.13'
+      # 关键修复: 给gradlew脚本添加可执行权限
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
       - name: Build APK
         id: build
@@ -34,7 +29,6 @@ jobs:
           ./gradlew assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
         continue-on-error: true
 
-      # 仅在编译失败时上传日志
       - name: Upload error log
         if: failure() || steps.build.outcome == 'failure'
         uses: actions/upload-artifact@v4
@@ -43,19 +37,16 @@ jobs:
           path: build.log
           retention-days: 7
 
-      # 仅在编译成功时查找并上传 APK
+      # 使用通配符查找APK，路径更通用
       - name: Find APK
         if: steps.build.outcome == 'success'
         id: find_apk
         run: |
-          echo "Searching for APK files..."
-          APK_PATH=$(find . -name "*.apk" -type f | head -n 1)
+          APK_PATH=$(find . -path "*/build/outputs/apk/*/*.apk" -type f | head -n 1)
           if [ -z "$APK_PATH" ]; then
-            echo "No APK found. Listing build outputs for debugging:"
-            find . -path "*/build/outputs/*" -type f | head -20
+            echo "No APK found"
             exit 1
           fi
-          echo "Found APK: $APK_PATH"
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
 
       - name: Upload APK
